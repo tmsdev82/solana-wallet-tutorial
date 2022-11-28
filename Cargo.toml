@@ -1,0 +1,13 @@
+[package]
+name = "solana-wallet-tutorial"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = {version = "4.0.26", features = ["derive"]}
+solana-sdk = "1.14.5"
+solana-client = "1.14.5"
+tiny-bip39 = "0.8.2"
+chrono = "0.4.22"
