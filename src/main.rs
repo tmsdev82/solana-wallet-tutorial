@@ -7,10 +7,12 @@ use solana_sdk::{
     clock::Clock,
     commitment_config::CommitmentConfig,
     native_token::lamports_to_sol,
-    signature::{keypair_from_seed, write_keypair_file},
+    pubkey::Pubkey,
+    signature::{keypair_from_seed, read_keypair_file, write_keypair_file},
     signer::Signer,
     sysvar,
 };
+use std::str::FromStr;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about=None)]
@@ -35,6 +37,12 @@ enum Commands {
         mnemonic_word_count: u32,
         #[arg(short, long, help = "Passphrase to use for extra security.")]
         passphrase: Option<String>,
+    },
+    Balance {
+        #[arg(group = "input")]
+        address: Option<String>,
+        #[arg(long, group = "input")]
+        wallet_file: Option<String>,
     },
 }
 
@@ -97,6 +105,13 @@ fn generate_keypair(output_path: &str, mnemonic_word_count: usize, passphrase: &
     println!("Public key: {}", &keypair.pubkey());
 }
 
+fn get_balance(address: &str, client: &RpcClient) {
+    let pubkey = Pubkey::from_str(address).unwrap();
+    let balance = client.get_balance(&pubkey).unwrap();
+
+    println!("Balance for {}: {}", address, lamports_to_sol(balance));
+}
+
 fn main() {
     let cli = Cli::parse();
     let client = RpcClient::new(SERVER_URL);
@@ -117,6 +132,19 @@ fn main() {
         }) => {
             println!("Generate keys, output to: {}", output);
             generate_keypair(output, *mnemonic_word_count as usize, passphrase);
+        }
+        Some(Commands::Balance {
+            address,
+            wallet_file,
+        }) => {
+            if let Some(address) = address {
+                println!("Get balance for address: {}", address);
+                get_balance(address, &client);
+            } else if let Some(wallet_path) = wallet_file {
+                println!("Get balance for Wallet file: {}", wallet_path);
+                let keypair = read_keypair_file(wallet_path).unwrap();
+                get_balance(&keypair.pubkey().to_string(), &client);
+            }
         }
         None => {}
     }
