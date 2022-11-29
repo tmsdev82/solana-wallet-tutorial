@@ -1,9 +1,15 @@
+use bip39::{Language, Mnemonic, MnemonicType, Seed};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use clap::{Parser, Subcommand};
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
-    account::from_account, clock::Clock, commitment_config::CommitmentConfig,
-    native_token::lamports_to_sol, sysvar,
+    account::from_account,
+    clock::Clock,
+    commitment_config::CommitmentConfig,
+    native_token::lamports_to_sol,
+    signature::{keypair_from_seed, write_keypair_file},
+    signer::Signer,
+    sysvar,
 };
 
 #[derive(Parser)]
@@ -17,6 +23,19 @@ struct Cli {
 enum Commands {
     ClusterInfo,
     Supply,
+    KeyGen {
+        #[arg(short, long, help = "Output file path for keypair file.")]
+        output: String,
+        #[arg(
+            short,
+            long,
+            default_value_t = 12,
+            help = "How many words to generate for the mnemonic. Valid values are: 12, 15, 18, 21, and 24."
+        )]
+        mnemonic_word_count: u32,
+        #[arg(short, long, help = "Passphrase to use for extra security.")]
+        passphrase: Option<String>,
+    },
 }
 
 const SERVER_URL: &str = "https://api.devnet.solana.com";
@@ -62,6 +81,22 @@ fn get_supply(client: &RpcClient) {
     );
 }
 
+fn generate_keypair(output_path: &str, mnemonic_word_count: usize, passphrase: &Option<String>) {
+    let mnemonic_type = MnemonicType::for_word_count(mnemonic_word_count).unwrap();
+    let mnemonic = Mnemonic::new(mnemonic_type, Language::English);
+
+    let seed = match passphrase {
+        Some(phrase) => Seed::new(&mnemonic, phrase),
+        None => Seed::new(&mnemonic, ""),
+    };
+
+    let keypair = keypair_from_seed(seed.as_bytes()).unwrap();
+    write_keypair_file(&keypair, output_path).unwrap();
+
+    println!("Mnemonic: {:?}", mnemonic);
+    println!("Public key: {}", &keypair.pubkey());
+}
+
 fn main() {
     let cli = Cli::parse();
     let client = RpcClient::new(SERVER_URL);
@@ -74,6 +109,14 @@ fn main() {
         Some(Commands::Supply) => {
             println!("Get supply info");
             get_supply(&client);
+        }
+        Some(Commands::KeyGen {
+            output,
+            mnemonic_word_count,
+            passphrase,
+        }) => {
+            println!("Generate keys, output to: {}", output);
+            generate_keypair(output, *mnemonic_word_count as usize, passphrase);
         }
         None => {}
     }
