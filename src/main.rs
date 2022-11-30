@@ -6,13 +6,17 @@ use solana_sdk::{
     account::from_account,
     clock::Clock,
     commitment_config::CommitmentConfig,
-    native_token::lamports_to_sol,
+    native_token::{lamports_to_sol, sol_to_lamports},
     pubkey::Pubkey,
     signature::{keypair_from_seed, read_keypair_file, write_keypair_file},
     signer::Signer,
     sysvar,
 };
-use std::str::FromStr;
+use std::{
+    io::{self, Write},
+    str::FromStr,
+};
+use std::{thread, time};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about=None)]
@@ -43,6 +47,12 @@ enum Commands {
         address: Option<String>,
         #[arg(long, group = "input")]
         wallet_file: Option<String>,
+    },
+    Airdrop {
+        #[arg(short, long)]
+        address: String,
+        #[arg(short, long)]
+        sol: f64,
     },
 }
 
@@ -112,6 +122,27 @@ fn get_balance(address: &str, client: &RpcClient) {
     println!("Balance for {}: {}", address, lamports_to_sol(balance));
 }
 
+fn airdrop_sol(address: &str, sol: f64, client: &RpcClient) {
+    let lamports = sol_to_lamports(sol);
+    let pubkey = Pubkey::from_str(address).unwrap();
+    let signature = client.request_airdrop(&pubkey, lamports).unwrap();
+
+    let wait_milis = time::Duration::from_millis(100);
+    print!("Waiting to confirm");
+    io::stdout().flush().unwrap();
+    loop {
+        if let Ok(confirmed) = client.confirm_transaction(&signature) {
+            if confirmed {
+                println!("\nAirdrop to {}: {}", address, confirmed);
+                break;
+            }
+        }
+        print!(".");
+        io::stdout().flush().unwrap();
+        thread::sleep(wait_milis);
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
     let client = RpcClient::new(SERVER_URL);
@@ -145,6 +176,10 @@ fn main() {
                 let keypair = read_keypair_file(wallet_path).unwrap();
                 get_balance(&keypair.pubkey().to_string(), &client);
             }
+        }
+        Some(Commands::Airdrop { address, sol }) => {
+            println!("Airdrop {} SOL to {}", sol, address);
+            airdrop_sol(address, *sol, &client);
         }
         None => {}
     }
