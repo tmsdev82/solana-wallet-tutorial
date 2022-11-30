@@ -8,9 +8,10 @@ use solana_sdk::{
     commitment_config::CommitmentConfig,
     native_token::{lamports_to_sol, sol_to_lamports},
     pubkey::Pubkey,
-    signature::{keypair_from_seed, read_keypair_file, write_keypair_file},
+    signature::{keypair_from_seed, read_keypair_file, write_keypair_file, Keypair},
     signer::Signer,
-    sysvar,
+    system_instruction, sysvar,
+    transaction::Transaction,
 };
 use std::{
     io::{self, Write},
@@ -51,6 +52,14 @@ enum Commands {
     Airdrop {
         #[arg(short, long)]
         address: String,
+        #[arg(short, long)]
+        sol: f64,
+    },
+    Transfer {
+        #[arg(short, long)]
+        from_wallet: String,
+        #[arg(short, long)]
+        to: String,
         #[arg(short, long)]
         sol: f64,
     },
@@ -143,6 +152,43 @@ fn airdrop_sol(address: &str, sol: f64, client: &RpcClient) {
     }
 }
 
+fn transfer_sol(client: &RpcClient, keypair: &Keypair, to_key: &str, sol_amount: f64) {
+    let to_pubkey = Pubkey::from_str(to_key).unwrap();
+    let lamports = sol_to_lamports(sol_amount);
+    let transfer_instruction =
+        system_instruction::transfer(&keypair.pubkey(), &to_pubkey, lamports);
+
+    let latest_blockhash = client.get_latest_blockhash().unwrap();
+
+    let transaction = Transaction::new_signed_with_payer(
+        &[transfer_instruction],
+        Some(&keypair.pubkey()),
+        &[keypair],
+        latest_blockhash,
+    );
+
+    let wait_milis = time::Duration::from_millis(100);
+    print!("Waiting to confirm");
+    io::stdout().flush().unwrap();
+
+    match client.send_transaction(&transaction) {
+        Ok(signature) => loop {
+            if let Ok(confirmed) = client.confirm_transaction(&signature) {
+                if confirmed {
+                    println!("\nTransfer of sol was confirmed");
+                    break;
+                }
+            }
+            print!(".");
+            io::stdout().flush().unwrap();
+            thread::sleep(wait_milis);
+        },
+        Err(e) => {
+            println!("Error transferring sol: {}", e);
+        }
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
     let client = RpcClient::new(SERVER_URL);
@@ -180,6 +226,15 @@ fn main() {
         Some(Commands::Airdrop { address, sol }) => {
             println!("Airdrop {} SOL to {}", sol, address);
             airdrop_sol(address, *sol, &client);
+        }
+        Some(Commands::Transfer {
+            from_wallet,
+            to,
+            sol,
+        }) => {
+            let keypair = read_keypair_file(from_wallet).unwrap();
+            println!("Transfer {} SOL from {} to {}", sol, &keypair.pubkey(), to);
+            transfer_sol(&client, &keypair, to, *sol);
         }
         None => {}
     }
